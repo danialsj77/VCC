@@ -1,0 +1,47 @@
+# Patterns use [Aa]-style brackets so they also work on Linux (TSUBAME), where Git is case-sensitive.
+
+# ---- Secrets: never commit API keys or credentials ----
+*.[Rr][Tt][Ff]
+*.[Rr][Tt][Ff][Dd]/
+*[Kk][Ee][Yy]*.[Tt][Xx][Tt]
+*[Kk][Ee][Yy]*.[Jj][Ss][Oo][Nn]
+*[Tt][Oo][Kk][Ee][Nn]
+*[Tt][Oo][Kk][Ee][Nn].[Tt][Xx][Tt]
+*[Tt][Oo][Kk][Ee][Nn].[Jj][Ss][Oo][Nn]
+.env
+.env.*
+*.env
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+credentials.json
+
+# ---- Challenge data: download it yourself with the vcc CLI (see CONTRIBUTING.md) ----
+controls/
+controls_*/
+*.[Zz][Ii][Pp]
+*.[Hh]5[Aa][Dd]
+*.[Hh]5[Mm][Uu]
+*.[Hh]5
+*.[Vv][Cc][Cc]
+# safety net: bundle files in whatever folder someone unzips them into
+gene_names.csv
+pert_counts.csv
+
+# ---- Public datasets and generated outputs ----
+data/
+work/
+*.parquet
+
+# ---- Papers (copyrighted; link to them instead) ----
+*.[Pp][Dd][Ff]
+
+# ---- Environments and editor/OS clutter ----
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store
+# executed notebook copies (tsubame/run_notebook.sh writes them to work/runs/; this catches strays)
+notebooks/*.*.*.ipynb
+vcc_harness.o*

@@ -1,0 +1,17 @@
+# Python 3.12 environment for the Mac / any CPU machine (see CONTRIBUTING.md §2).
+# On TSUBAME use tsubame/setup_env.sh instead (adds the GPU scorer).
+cell-eval2==0.18.0        # Arc's official scorer (vcc2026 profile)
+pdex==0.3.0               # CPU differential-expression engine used by cell-eval2
+anndata==0.13.4
+scanpy==1.12.4
+numpy==2.5.4
+pandas==3.0.6
+scipy==1.18.1
+polars==2.0.0
+h5py==3.16.0
+matplotlib==3.11.2
+jupyterlab==4.6.4
+ipykernel==7.4.0
+jupytext==1.19.6          # keeps notebooks/*.ipynb paired with reviewable notebooks/*.py
+nbconvert==7.17.2
+papermill==2.7.0          # runs notebooks unattended (batch jobs)
