@@ -3,6 +3,36 @@
 Team lead: **Daniyal Sajedi Hosseini** (owner of this repo and of our challenge team).
 Read [README.md](README.md) first, then this guide, then [METHOD.md](METHOD.md).
 
+## The team
+
+Five members (the rules allow up to eight). Focus areas are a **proposal**; adjust them at the first team meeting.
+Task numbers refer to §8.
+
+| Member | Proposed focus | Tasks |
+|---|---|---|
+| **Daniyal Sajedi Hosseini** (lead) | Challenge account and all submissions; integration; effect model v1 | #4, #7 (sends), submissions |
+| **Ken** | TSUBAME and data infrastructure: group setup, shared data folder, H1 proxy runs, public data pipeline | #2, #3 |
+| **Dr. Mehrshad** | Method advice; owns the knowledge/LLM-neighbour experiment (the LangPert-style fallback, decided by the held-out bake-off) and the response-strength/null model | METHOD §3c, #6 |
+| **Prof. Fujisawa** | Scientific and statistical review of the validation design; fallback generator | #8, reviews |
+| **Dr. Shubham** | Target coverage census; context template model | #1, #5 |
+
+**Decide together before anyone registers: the capacity we all participate in** (see §1.3). Our members have
+different affiliations, so the options are:
+- **all in a personal capacity**: works for any mix, but each person must check their own employer's or
+  university's terms;
+- **all as university representatives**: allowed across *different* universities, but only if every member is a
+  university member;
+- **all as employees**: only if every member works for the *same* organization.
+
+Anyone who works for a company should get their employer's permission first.
+
+**TSUBAME.** Paid jobs need a TSUBAME group owned by a faculty or staff member (groups created by students can't use
+paid services). Ken coordinates the group, its points and the shared data folder. Members without Science Tokyo
+accounts work on their laptops (synthetic proxy, pseudobulk-level tasks), or Ken runs their full-size jobs.
+
+**GitHub.** Daniyal adds each member as a collaborator on this private repo (GitHub → Settings → Collaborators →
+Add people). Send him your GitHub username.
+
 ---
 
 ## 1. Join the challenge (once, ~30 min)
@@ -72,7 +102,7 @@ If it fails, open an issue with the error and the last lines of `work/.../log_*.
 Full-size experiments (300 targets, the real-biology H1 proxy, big public datasets, model training) run on TSUBAME
 4.0 GPU nodes. Everything is in **notebook 01, §10**. In short:
 
-1. Get a TSUBAME account and an ed25519 SSH key registered in the TSUBAME portal; ask Daniyal to add you to our
+1. Get a TSUBAME account and an ed25519 SSH key registered in the TSUBAME portal; ask Ken to add you to our
    TSUBAME group (`tga-…`), which pays for jobs with points.
 2. So that TSUBAME can clone from GitHub, create a **second** key there and add its `.pub` to your GitHub account:
    `ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_github`, then add to `~/.ssh/config`:

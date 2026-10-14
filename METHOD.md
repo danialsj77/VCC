@@ -149,7 +149,7 @@ intervals. The leaderboard (2 shots per day, validation lines only) confirms; it
 
 ## 4. How LangPert informed our design, and why it is not the core
 
-[LangPert](https://openreview.net/forum?id=Tmx4o3Jg55) (Märtens et al., MLGenX 2025), recommended by our advisor,
+[LangPert](https://openreview.net/forum?id=Tmx4o3Jg55) (Märtens et al., MLGenX 2025), suggested by Dr. Mehrshad on our team,
 uses an LLM to pick 5–10 functionally similar genes whose responses were measured, and predicts the average of their
 responses. It is a simple, low-cost idea, and we read it carefully (notes:
 [notes/LangPert_notes.md](notes/LangPert_notes.md)). Two of its ideas shaped our design:
