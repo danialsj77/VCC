@@ -44,4 +44,6 @@ __pycache__/
 .DS_Store
 # executed notebook copies (tsubame/run_notebook.sh writes them to work/runs/; this catches strays)
 notebooks/*.*.*.ipynb
+# batch-job logs written into the clone root (tsubame/run_notebook.sh, tsubame/run_pipeline.sh)
 vcc_harness.o*
+vcc_pipeline.o*

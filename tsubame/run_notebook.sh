@@ -16,8 +16,20 @@
 #$ -N vcc_harness
 #$ -j y
 
+# Environment modules (CUDA for the GPU scorer). A batch job's non-interactive shell may not have the `module` command
+# yet: load its init script if needed, and stop loudly if it is still missing (otherwise CUDA is silently not loaded).
+if ! command -v module >/dev/null 2>&1; then
+    [ -f /etc/profile.d/modules.sh ] && . /etc/profile.d/modules.sh
+fi
+command -v module >/dev/null 2>&1 || { echo "module command missing: cannot load CUDA (no /etc/profile.d/modules.sh?)" >&2; exit 1; }
 module purge
-module load cuda/12.8.0
+module load cuda/12.8.0 || { echo "module load cuda/12.8.0 failed (see 'module avail cuda')" >&2; exit 1; }
+
+# Temporary files (the notebook's `vcc prep --dry-run` and the scorer write large ones): the node's local disk.
+export TMPDIR="${T4TMPDIR:-$PWD/work/tmp}"
+mkdir -p "$TMPDIR"
+export PATH="$HOME/.local/bin:$PATH"         # where `uv tool install` puts the vcc CLI
+echo "vcc CLI: $(vcc version 2>&1 | head -1); TMPDIR=$TMPDIR"
 
 export VCC_MODE=tsubame_full                 # up to 300 perturbations, GPU scorer
 export VCC_PROXY="${VCC_PROXY:-synthetic}"   # or h1_2025

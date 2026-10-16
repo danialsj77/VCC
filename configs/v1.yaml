@@ -1,0 +1,163 @@
+# Model v1 pipeline configuration, read by scripts/00_download_data.sh and scripts/0[1-3]_*.py.
+#
+# Paths are relative to the project root (the folder that contains vccpipe/); absolute paths work too.
+# Every script takes --smoke, which deep-merges the `smoke:` section at the bottom over this file
+# (dicts merge key by key, lists and scalars are replaced). Smoke runs write to their own folders, so a laptop
+# test can never be mistaken for, or overwrite, a real run.
+#
+# Interfaces: docs/DESIGN_v1.md. Why each piece exists: METHOD.md.
+
+paths:
+  controls_dir: controls            # VCC controls bundle (gene_names.csv, pert_counts.csv, context_*.h5ad).
+                                    #   FINAL PHASE: pass --controls-dir controls_DEF to 03_make_submission.py.
+  data_dir: data                    # downloaded public datasets (00_download_data.sh)
+  processed_dir: data/processed     # ResponseSets, TSS table, cis model (01_build_sources.py)
+  work_dir: work                    # proxy (work/h1_proxy), validation (work/validation), submission
+
+# ---------------------------------------------------------------------------------------------------------------
+# Public data. `file` is relative to data_dir. 00_download_data.sh skips files that are already complete.
+# ---------------------------------------------------------------------------------------------------------------
+data:
+  # Replogle et al. 2022 (Cell), figshare+ dataset 10.25452/figshare.plus.20029387, CC BY 4.0.
+  # "raw_bulk_01": one row per guide = mean raw UMI counts per cell; ~8k expressed genes.
+  figshare_urls:                    # tried in order; the second is figshare's generic download host
+    - https://plus.figshare.com/ndownloader/files
+    - https://ndownloader.figshare.com/files
+  replogle:
+    k562_gw:        {file: replogle/K562_gwps_raw_bulk_01.h5ad,        figshare_id: 35774443}  # genome-wide, ~11k targets
+    k562_essential: {file: replogle/K562_essential_raw_bulk_01.h5ad,   figshare_id: 35773070}  # not used by v1 yet
+    rpe1:           {file: replogle/rpe1_raw_bulk_01.h5ad,             figshare_id: 35775581}  # not used by v1 yet
+  gencode:                          # gene TSS positions for the cis (neighbouring-promoter) model
+    # GENCODE v32 = the annotation behind 10x GRCh38-2020-A, whose gene symbols the VCC axis, H1 and Replogle all
+    # use. A newer release renames ~500 axis genes (KARS -> KARS1, MARCH2 -> MARCHF2, ...), which would then get
+    # no TSS and silently drop out of the cis prior. 01_build_sources.py warns if < 99% of axis genes get a TSS.
+    file: annotation/gencode.v32.basic.annotation.gtf.gz
+    url: https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_32/gencode.v32.basic.annotation.gtf.gz
+  h1:
+    # Arc VCC 2025 H1 hESC CRISPRi single-cell data (~34 GB in total; ~38k shared control cells in every file).
+    # Used as the held-out line: the proxy for validation, and the truth that the gains (beta, gamma) are fitted on.
+    # It is NOT a source of the submitted model in v1 (model.source_weights.h1_2025 = 0, see below).
+    base_url: https://storage.googleapis.com/arc-institute-virtual-cell-atlas/virtual-cell-challenge/2025
+    dir: h1_2025                    # local folder under data_dir; files keep their base names
+    files:                          # remote path under base_url: size in bytes (null = ask the server)
+      test/adata_Test.h5ad: 11950739168               # 100 targets, 170,846 cells (proxy controls come from here)
+      validation/adata_Validation.h5ad: 6928967541    #  50 targets,  98,927 cells
+      train/adata_Training.h5ad: 15482497461          # 150 targets, 221,273 cells
+
+# ---------------------------------------------------------------------------------------------------------------
+# Building the sources (01_build_sources.py)
+# ---------------------------------------------------------------------------------------------------------------
+sources:
+  k562_gw: {}                       # vccpipe.sources.load_replogle_bulk has no tunables yet
+  h1:                               # vccpipe.sources.h1_pseudobulk
+    min_cells: 50                   # targets with fewer cells are dropped
+    max_cells_per_target: null      # null = use every cell (bounded memory anyway: one target at a time)
+    seed: 0
+cis:                                # vccpipe.cis.CisModel, fitted on K562 only (H1 is the held-out line)
+  bins_kb: [0, 1, 2, 5, 10, 20, 50]
+  min_cells: 50
+  min_ctrl_cpm: 5                   # fit only on neighbours the scorer can test (control CPM > 5); low-expressed
+                                    #   neighbours are pulled to ~0 by the pseudocount and would dilute the medians
+  min_abs_effect: 0.1               # bins whose median |log2FC| is below this predict no cis effect
+proxy:                              # vccpipe.proxy.build_h1_proxy
+  n_ctrl: 18400                     # VCC contexts have 18,400 control cells
+  kd_min: 0.8                       # keep targets whose mean CPM drops >= 80% (Arc: >= 80% median knockdown)
+  median_umi: 20000                 # VCC cells have ~20k UMI; H1 cells ~54k, so they are thinned
+  seed: 0
+  max_targets: null                 # null = every target that passes (~200-255)
+  # Strength filter: make the proxy panel respond like the VCC panel. Measured on the real K562 file, no VCC panel
+  # target has more than 42 genes with |z| > 4.5 (among genes above 5 CPM in K562 controls; median 3), whereas
+  # ~16% of the H1 targets have 50 or more (up to 1,250). Those few strong targets would dominate the gain fit, the
+  # MSE and the choice of z0. So an H1 target whose K562 response has MORE than max_strong_genes such genes is
+  # left out of the proxy (and therefore out of the gain fit). H1 targets that K562 did not measure are kept.
+  # null = no filter. 01_build_sources.py writes the counts to work/h1_proxy/strength.csv.
+  max_strong_genes: 50
+  strong_z: 4.5
+
+# ---------------------------------------------------------------------------------------------------------------
+# Model defaults = vccpipe.model.ModelParams fields. 02_validate.py tunes z0 / null_p (grid below) and then
+# beta_scale / min_called_lfc (stage 2), fits beta / gamma; 03_make_submission.py reads the result from
+# work/validation/best_params_<generator>.json (or best_params.json).
+# ---------------------------------------------------------------------------------------------------------------
+model:
+  z0: 2.0                           # |z| below z0 → specific response treated as noise (soft threshold start).
+                                    #   The z is that of the template-removed deviation (lfc - T) / se.
+  z_soft: 1.0                       # width of the soft ramp from z0 to full weight (<= 0: hard gate)
+  beta: 1.0                         # gain on the specific response D (fitted on H1 in 02)
+  gamma: 1.0                        # gain on the template T (fitted on H1 in 02)
+  beta_scale: 1.0                   # multiplier on top of the fitted beta (tuned in stage 2, never fitted). The
+                                    #   least-squares beta shrinks noisy transfers, but the DE metrics punish
+                                    #   predicted changes too small to be called; > 1 undoes some of that shrinkage
+  gamma_scale: 1.0                  # the same for gamma
+  min_called_lfc: 0.0               # where the specific response is non-zero and the gene is DE-testable (> 5 CPM),
+                                    #   |predicted log2FC| is raised to at least this (tuned in stage 2)
+  null_p: 0.05                      # source phenotype p above this → "no detectable response" → D = 0
+  expr_floor_cpm: 0.5               # predict no change for genes below this control mean CPM
+  kd_lfc: -2.7                      # predicted log2FC of the knocked-down gene itself (~85% knockdown)
+  use_template: true
+  use_specific: true
+  use_cis: true
+  template_sources: [k562_gw]       # sources whose panel-average response forms the template T (null = every source
+                                    #   with weight > 0). gamma is fitted for THIS template; adding a line here
+                                    #   changes what gamma multiplies, so it must be validated first
+  source_weights:                   # weight of each source in the template / specific averages (missing → 1)
+    k562_gw: 1.0
+    h1_2025: 0.0                    # 0 = not a source. v1 submits the model validation tested (K562 only); H1 stays
+                                    #   the held-out truth line the gains are fitted on. Test H1-as-source only as a
+                                    #   separate, clearly labelled entry (a copy of this config with a weight > 0)
+
+generator:                          # vccpipe.generator: template (edit real control cells) or nb (sampled)
+  name: template
+  spread: 0.0                       # cell-to-cell spread of the response (template generator only)
+
+# ---------------------------------------------------------------------------------------------------------------
+# Validation on the H1 proxy with the official scorer (02_validate.py)
+# ---------------------------------------------------------------------------------------------------------------
+validation:
+  folds: 2                          # cross-fitting: gains fitted on the other folds' targets, never on the scored ones
+  seed: 0                           # fold assignment and cell generation. Cells are drawn with one random stream per
+                                    #   target (seeded by [seed, target index]), so variants see the same draws
+  cells_per_pert: 400
+  grid:                             # STAGE 1, full factorial; keys are ModelParams fields, `generator` or `spread`.
+    z0: [2.5, 3.5, 4.5]             #   nb ignores spread, so its spread duplicates are dropped
+    null_p: [0.05, 1.0]             #   (3 x 2 x {template s0, template s0.5, nb} = 18 variants)
+    generator: [template, nb]       #   z0 1.5 was dropped: on VCC-like targets ~93% of genes passing |z| > 1.5 are
+    spread: [0.0, 0.5]              #   noise; at 4.5 only ~0.1 noise genes per target pass
+  ablations:                        # extra variants: overrides on top of the model/generator defaults above
+    - {name: template_only, use_specific: false}
+    - {name: no_cis, use_cis: false}
+  stage2:                           # STAGE 2, run after stage 1 around the stage-1 winner OF EACH GENERATOR: a full
+    beta_scale: [1.0, 2.0, 3.0]     #   factorial of these ModelParams overrides on top of that winner's settings
+    min_called_lfc: [0.0, 0.4]      #   (3 x 2 - 1 = 5 new variants per generator; the (1, 0) point is the winner).
+                                    #   Each generator then gets its own best_params_<generator>.json
+
+# ---------------------------------------------------------------------------------------------------------------
+# Submission (03_make_submission.py)
+# ---------------------------------------------------------------------------------------------------------------
+submission:
+  cells_per_pert: 400               # fixed by the challenge
+  chunk_targets: 50                 # targets per on-disk chunk (memory bound while writing 360k cells)
+  seed: 0                           # cells of target i in context c come from the stream [seed, c, i]
+  name: model-v1                    # leaderboard name in the printed `vcc submit` command (+ the UTC date). Keep it
+                                    #   neutral: the leaderboard shows it to every team
+
+# ---------------------------------------------------------------------------------------------------------------
+# --smoke: tiny sizes for a laptop test with fake data (tests/test_end_to_end.py). Merged over everything above.
+# ---------------------------------------------------------------------------------------------------------------
+smoke:
+  paths:
+    processed_dir: work/smoke/processed
+    work_dir: work/smoke
+  sources:
+    h1: {max_cells_per_target: 200}
+  proxy:
+    n_ctrl: 600
+    max_targets: 12
+  validation:
+    folds: 2
+    grid: {z0: [2.5], null_p: [1.0], generator: [template, nb], spread: [0.0]}   # 2 variants
+    ablations: []
+    stage2: {beta_scale: [1.0, 2.0], min_called_lfc: [0.0]}                      # +1 variant per generator
+  submission:
+    cells_per_pert: 5               # also passed to `vcc prep --cells-per-pert 5`; smoke is always a dry run
+    chunk_targets: 100
