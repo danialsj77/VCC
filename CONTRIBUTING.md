@@ -13,7 +13,7 @@ Task numbers refer to §8.
 | **Daniyal Sajedi Hosseini** (lead) | Challenge account and all submissions; integration; effect model v1 | #4, #7 (sends), submissions |
 | **Ken** | TSUBAME and data infrastructure: group setup, shared data folder, H1 proxy runs, public data pipeline | #2, #3 |
 | **Dr. Mehrshad** | Method advice; owns the knowledge/LLM-neighbour experiment (the LangPert-style fallback, decided by the held-out bake-off) and the response-strength/null model | METHOD §3c, #6 |
-| **Prof. Fujisawa** | Scientific and statistical review of the validation design; fallback generator | #8, reviews |
+| **Prof. Fujisawa** | Scientific and statistical review of the validation design; NB generator (no copied control cells) | #8, reviews |
 | **Dr. Shubham** | Target coverage census; context template model | #1, #5 |
 
 **Decide together before anyone registers: the capacity we all participate in** (see §1.3). Our members have
@@ -71,15 +71,15 @@ uv venv .venv --python 3.12
 uv pip install --python .venv/bin/python -r requirements.txt
 .venv/bin/python -m ipykernel install --user --name vcc --display-name "VCC (project .venv)"
 
-# The challenge CLI, then log in with YOUR key
-uv tool install vcc-cli
+# The challenge CLI (pinned: the pipeline relies on 0.2.2's `vcc prep` flags), then log in with YOUR key
+uv tool install 'vcc-cli==0.2.2'
 vcc login                                  # paste the key at the hidden prompt, press Enter; stored in your OS keychain
                                            # (macOS alternative: copy the key, then `pbpaste | vcc login --token-stdin`)
 vcc whoami                                 # should say: team …, status: ready to submit
 
-# The challenge's control cells (not in git: ~630 MB)
-vcc datasets download controls -d .
-unzip -o vcc_2026_controls.zip -d controls
+# The challenge's control cells (not in git: ~630 MB). -o fixes the zip's name (the server chooses it otherwise)
+vcc datasets download controls -o controls.zip
+unzip -o controls.zip -d controls
 ```
 
 ## 3. Check that everything works (~10 min)
@@ -114,7 +114,7 @@ Full-size experiments (300 targets, the real-biology H1 proxy, big public datase
    mkdir -p /gs/bs/<group>/$USER && cd /gs/bs/<group>/$USER
    git clone git@github.com:danialsj77/VCC.git && cd VCC && bash tsubame/setup_env.sh
    vcc login --store-plaintext
-   vcc datasets download controls -d . && unzip -o vcc_2026_controls.zip -d controls
+   vcc datasets download controls -o controls.zip && unzip -o controls.zip -d controls
    ```
    Large public datasets are downloaded **once** into `/gs/bs/<group>/shared/data` and linked into each clone
    (`ln -s /gs/bs/<group>/shared/data data`).
@@ -154,20 +154,34 @@ in a prize entry.
 ## 6. Submission protocol (leaderboard and final)
 
 We have **2 scored submissions per day for the whole team** (reset 00:00 UTC = 09:00 JST), one in flight at a time.
-Only the team lead submits, so we never collide or waste slots.
+The team lead controls every submission, so we never collide or waste slots. Normally he also runs `vcc submit`
+himself. **The one exception** ([RUNBOOK.md](RUNBOOK.md) §7, option B): the teammate who built a file on TSUBAME may
+submit it there with **their own** key, but only after the lead's **explicit written go-ahead for that exact file**,
+naming its sha256 and the leaderboard name. It still uses one of the team's 2 daily slots.
 
 1. A candidate must **beat our current best on the local harness** (H1 proxy and/or held-out public lines).
 2. Open an issue titled `Submission: <model name>` with the commit hash, how to build the file, and the harness
    scores.
-3. The submitter builds the file on a big machine (TSUBAME `node_q`, ~50 GB RAM peak), packages it, and submits
-   **the `.vcc`** (never the `.h5ad`: `vcc submit`'s own built-in check only knows contexts A,B,C):
+3. The file is built on a big machine (TSUBAME `node_q`, ~50 GB RAM peak) and packaged; only **the `.vcc`** is
+   submitted (never the `.h5ad`: `vcc submit`'s own built-in check only knows contexts A,B,C). `vcc prep` writes
+   ~20 GB of temporary files, so point `TMPDIR` at a large disk first:
    ```bash
+   export TMPDIR="${T4TMPDIR:-$PWD/work/tmp}" && mkdir -p "$TMPDIR"
    vcc prep sub.h5ad -g controls/gene_names.csv --perts controls/pert_counts.csv --contexts A,B,C -o sub.vcc
-   vcc submit sub.vcc -m "<model name>" -d "<what changed>" --wait
+   sha256sum sub.vcc | tee sub.vcc.sha256
+   vcc submit sub.vcc -m "model-v1-<UTC date>" --wait        # neutral name, no -d description (see below)
    ```
    then records it in [submissions/LOG.md](submissions/LOG.md) (UTC time, entry id, commit, raw + scaled scores
    from `vcc status <id> --json`).
-4. Never submit placeholders or untested files. The leaderboard ranks our **most recent** submission, not our best.
+4. **Leaderboard names and descriptions are public.** Use a neutral name (`<model>-<UTC date>`) and no `-d`
+   description. The method, the variant and our offline scores go in `submission.json` and submissions/LOG.md
+   only (§7: don't share strategies).
+5. A `.vcc` is 3–5 GB. Move it with `rsync --partial` or a private cloud-folder link that only the recipient can
+   open, **never as a chat or e-mail attachment**.
+6. Never submit placeholders or untested files. The leaderboard ranks our **most recent** submission, not our best.
+7. Until the organizers confirm that control cells may be used as templates (task #7), every submission uses the
+   NB generator (`work/validation/best_params_nb.json`). `scripts/03_make_submission.py` refuses the template
+   generator without `--allow-control-templates`.
 
 **Final phase (Oct 22 → Nov 5, 23:59 UTC = Nov 6, 08:59 JST).** New lines **and** new targets; no feedback.
 - Unzip the D/E/F bundle into **`controls_DEF/`** (git ignores it); in notebooks set
@@ -184,9 +198,16 @@ Only the team lead submits, so we never collide or waste slots.
   Measured data enters **only as training data for a fitted model**. No component may pass measured values through
   as predictions: no copied or hand-weighted averages of fold changes from papers or public screens. Non-learned
   components (the cell generator, thresholds) may shape model outputs and must be disclosed.
+  - **Model v1 is pending the organizers' answer.** v1 submits the same target's K562 response, gated and rescaled
+    by two fitted gains and scale multipliers chosen on the H1 proxy, plus K562's panel-average response
+    ([METHOD.md](METHOD.md) §3 "What v1 implements"). That is close to a rescaled copy of published measurements,
+    so it may not meet this rule. We are asking the organizers (task #7). Until they answer, v1 is a pipeline test
+    and a leaderboard calibration point. It becomes our final entry only if they accept this kind of transfer;
+    otherwise the learned transfer (v2) replaces it.
 - **Open question: the challenge's control cells.** Arc calls them "model inputs only — do not copy them into your
-  prediction". Our generator uses them as templates (§3 of METHOD.md). Until the organizers confirm this is
-  acceptable (task #7), we also build a fallback generator that doesn't (task #8).
+  prediction". Our template generator uses them as templates (§3 of METHOD.md). Until the organizers confirm in
+  writing that this is acceptable (task #7), every submission uses the NB generator, which samples every count
+  from a model fitted to the controls (task #8).
 - **Finalists must publish a description** of: training datasets, data processing and model inputs, models used or
   adapted (incl. public ones), architecture of non-public models, any non-learned components blended with model
   outputs, training/adaptation/inference phases, and (optionally) compute. Keep this information in
@@ -203,10 +224,11 @@ Only the team lead submits, so we never collide or waste slots.
 | # | Task | Needs | Size |
 |---|---|---|---|
 | 1 | **Target coverage census**: which of the 300 targets were measured (with a real response, enough cells) in K562 genome-wide, RPE1, HepG2, Jurkat, CD4 T cells, the full X-Atlas library, H1-2025 | laptop | ½ day |
-| 2 | **H1 proxy run** on TSUBAME; tune the generator's `spread` (on the DE metrics only) and the "no change" confidence threshold on real cells | TSUBAME | 1 day |
+| 2 | **H1 proxy run** on TSUBAME; tune the generator's `spread` and the "no change" confidence threshold on real cells. Part of v1's validation (#9): the proxy is strength-matched to the VCC panel, and 02 scores both generators | TSUBAME | 1 day |
 | 3 | **Public data pipeline**: download + format K562 genome-wide (bulk files first), CD4 T `DE_stats`, Replogle K562/RPE1, Nadig HepG2/Jurkat onto the VCC gene axis; leave-one-line-out proxies (H1 and K562-GW at full VCC format, others at pseudobulk level) | TSUBAME | 2–3 days |
-| 4 | **Effect model v1** (notebook 02): a *learned* cross-line transfer model trained on public screens ([METHOD.md](METHOD.md) §3) | 1–3 | 3–4 days |
+| 4 | **Effect model v1**: 🔧 **built and reviewed** (`vccpipe/`, `scripts/`, `configs/v1.yaml`, walkthrough in notebook 02; design in [docs/DESIGN_v1.md](docs/DESIGN_v1.md), summary in [METHOD.md](METHOD.md) §3 "What v1 implements"). Tested on fake data only; **untested on real data, pending its first run on TSUBAME (#9)**. NB generator by default. Its rules status is **pending the organizers' answer** (#7, §7). Next: the learned per-bin / regression transfer of METHOD §3 (v2) | #9 | done; v2 3–4 days |
 | 5 | **Context template model**: predict a line's generic perturbation response from its control cells | 3 | 2–3 days |
 | 6 | **Response-strength / null classifier**: which targets do (almost) nothing in a given line | 1, 3 | 2 days |
-| 7 | **Ask the organizers** (urgent, before our first submission): may control cells serve as generator templates? Is a learned cross-line transfer of a target's public responses an ML prediction? Plus the other questions in brief §6.5 | lead | ½ hour |
-| 8 | **Fallback generator** that does not reuse control cells: fitted negative-binomial per gene, library sizes drawn from the controls; compare with the template generator on the harness | laptop | 1 day |
+| 7 | **Ask the organizers** (urgent, before our first submission): may control cells serve as generator templates? Is v1's cross-line transfer of a target's public responses an ML prediction? Plus licences, PIE, the final-phase scoring and disclosure. **E-mail text ready: [notes/organizer_email_draft.md](notes/organizer_email_draft.md)**; Daniyal fills in the team name and sends it from his registered address. Record the date sent here, and the answers in `notes/organizer_answers.md` | lead | ½ hour |
+| 8 | **NB generator** that does not reuse control cells: 🔧 **built** (`NBGenerator`: negative binomial per gene, library size and depth decile of a randomly drawn control cell) and the **default for every submission** until #7 is answered. Compared with the template generator on the H1 proxy by #9. Next: a richer generative model fitted to the controls (NB factor model or scVI) | laptop | done; next 1–2 days |
+| 9 | **Run the v1 pipeline on TSUBAME** ([RUNBOOK.md](RUNBOOK.md)) — **owner: Ken**. Download the public data, build the response tables, validate on the H1 proxy, build the NB `.vcc` from `best_params_nb.json`; send `results.csv`, the `best_params*.json` files, `submission.json`, the `.vcc`'s sha256 and the logs to Daniyal, then hand over the `.vcc` by RUNBOOK §7 option A or B (never as a chat or e-mail attachment). Before Ken starts, Daniyal commits the v1 files and pushes the `model-v1` branch. This first run is v1's real test | TSUBAME | 1 day (mostly waiting) |

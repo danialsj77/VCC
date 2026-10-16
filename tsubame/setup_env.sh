@@ -13,8 +13,18 @@ cd "$(dirname "$0")/.."
 [ -d notebooks ] && [ -d tsubame ] || { echo "Run this from a clone of the project (notebooks/ and tsubame/ missing)." >&2; exit 1; }
 echo "Project folder: $(pwd)"
 
+# Environment modules (CUDA). A non-interactive shell may not have the `module` command yet: load its init script if
+# needed (with `set -u` off: the init script reads variables that may be unset), and stop if it is still missing.
+if ! command -v module >/dev/null 2>&1; then
+    set +u
+    [ -f /etc/profile.d/modules.sh ] && . /etc/profile.d/modules.sh
+    set -u
+fi
+command -v module >/dev/null 2>&1 || { echo "module command missing: cannot load CUDA (no /etc/profile.d/modules.sh?)" >&2; exit 1; }
+set +u                           # module scripts may also read unset variables
 module purge
 module load cuda/12.8.0          # check what exists with: module avail cuda
+set -u
 
 # uv = fast Python package manager. System Python on TSUBAME is 3.9; cell-eval2 needs >= 3.11,
 # so uv downloads its own Python 3.12 (needs outbound internet; TSUBAME compute nodes have it).
@@ -28,8 +38,11 @@ uv venv .venv --python 3.12 --seed --allow-existing
 uv pip install --python .venv/bin/python --torch-backend=cu128 \
     -r requirements.txt "cell-eval2[gpu,gpudge]==0.18.0" "gpudge==0.9.1"
 
-# The vcc CLI (download data, vcc prep, vcc submit).
-uv tool install vcc-cli
+# The vcc CLI (download data, vcc prep, vcc submit), pinned: 03_make_submission.py and the RUNBOOK rely on vcc 0.2.2's
+# `prep` flags and defaults (--contexts, --cells-per-pert, --dry-run, -o, -f). If the platform requires a newer
+# version, update the pin here and re-check those flags (vcc prep --help).
+uv tool install 'vcc-cli==0.2.2' || uv tool install --force 'vcc-cli==0.2.2'   # --force: replace another installed version
+vcc version
 
 # Register the environment as the Jupyter kernel "vcc" for Open OnDemand. TSUBAME's helper records the loaded
 # modules (CUDA) with the kernel; a plain `ipykernel install` cannot.
